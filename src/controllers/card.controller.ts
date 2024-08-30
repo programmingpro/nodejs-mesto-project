@@ -1,39 +1,39 @@
 import { Request, Response, NextFunction } from 'express';
 import Card, { ICard } from '../models/card.model';
-import { NotFoundError, BadRequestError, statusCodes } from '../errors';
+import {
+  NotFoundError, BadRequestError, statusCodes, ForbiddenError, CustomError
+} from '../errors';
 
 class CardController {
   static get(req: Request, res: Response, next: NextFunction) {
     Card.find({})
-      .then((data) => res.json({ data }))
+      .then((data) => res.json(data))
       .catch(next);
   }
 
   static post(req: Request, res: Response, next: NextFunction) {
-    // @ts-expect-error
-    const owner = req.user._id;
-    const { name, link, likes }: Pick<ICard, 'name' | 'link' | 'likes'> = req.body;
+    const owner = req.body.user._id;
+    const { name, link }: Pick<ICard, 'name' | 'link'> = req.body;
     Card.create({
-      name, link, owner, likes,
+      name, link, owner,
     })
       .then((card) => res.json(card))
       .catch((error) => {
-        if (statusCodes.BadRequest === error.statusCode) {
-          return next(new BadRequestError('Incorrect Data'));
+        if (error.statusCode === statusCodes.BadRequest) {
+          return next(new BadRequestError('Переданы некорректные данные при создании карточки'));
         }
         return next;
       });
   }
 
   static likeCard(req: Request, res: Response, next: NextFunction) {
-    // @ts-expect-error
-    const like = req.user._id;
+    const like = req.body.user._id;
     Card.findByIdAndUpdate(
       req.params.cardId,
       { $addToSet: { likes: like } },
       { new: true },
     )
-      .orFail(() => new NotFoundError('Not found'))
+      .orFail(() => new NotFoundError('Карточка с указанным _id не найдена'))
       .then((card) => res.send(card))
       .catch(next);
   }
@@ -41,14 +41,20 @@ class CardController {
   static delete(req: Request, res: Response, next: NextFunction) {
     const { cardId } = req.params;
     Card.findByIdAndDelete(cardId)
-      .orFail(() => new NotFoundError('Not found card with this id'))
-      .then((card) => res.send(card))
+      .orFail(() => new NotFoundError('Карточка с указанным _id не найдена'))
+      .then((card) => {
+        if (card.owner.toString() === req.body.user._id) {
+          Card.findByIdAndDelete(req.params.cardId)
+            .then(() => res.send(card));
+        } else {
+          next(new ForbiddenError('Вы не можете удалить карточку другого пользователя'));
+        }
+      })
       .catch(next);
   }
 
   static dislikeCard(req: Request, res: Response, next: NextFunction) {
-    // @ts-expect-error
-    const like = req.user._id;
+    const like = req.body.user._id;
     Card.findByIdAndUpdate(
       req.params.cardId,
       { $pull: { likes: like } },

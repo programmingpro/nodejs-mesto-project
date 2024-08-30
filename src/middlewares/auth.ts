@@ -1,11 +1,27 @@
-import { Request, Response, NextFunction } from 'express';
+import { NextFunction, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
+import UnauthorizedError from '../errors/unAuthorized';
 
-const authMe = (req: Request, res: Response, next: NextFunction) => {
-  // @ts-expect-error
-  req.user = {
-    _id: '669c053f486f489eb7eabb47',
-  };
-  next();
+const { SECRET_KEY = 'secret-key' } = process.env;
+
+const auth = (req: Request, res: Response, next: NextFunction) => {
+  const token = req.cookies?.jwt;
+
+  if (!token) {
+    return next(new UnauthorizedError('Требуется авторизация'));
+  }
+
+  let payload;
+
+  try {
+    payload = jwt.verify(token, SECRET_KEY);
+  } catch (err) {
+    return next(new UnauthorizedError('Требуется авторизация'));
+  }
+
+  req.body.user = payload;
+
+  return next();
 };
 
-export default authMe;
+export default auth;
